@@ -30,20 +30,17 @@ def train_base_KNN(name, train_set, test_set):
     train_set = pd.read_csv(data_dir / train_filename)
     test_set = pd.read_csv(data_dir / test_filename)
 
-    # Step 1.1: Seperate the last column from both data sets since it is the target
     x_train = train_set.drop(columns=["IsCanceled"])
     y_train = train_set["IsCanceled"]
     x_test = test_set.drop(columns=["IsCanceled"])
     y_test = test_set["IsCanceled"]
 
-    # Step 2: Run model with data
     knn = KNeighborsClassifier()
 
     knn.fit(x_train, y_train)
     
     y_pred = knn.predict(x_test)
 
-    # Get prediction probabilities (required for ROC-AUC)
     y_prob = knn.predict_proba(x_test)[:, 1]
 
     show_test_results(knn, y_test, y_pred, y_prob, x_train, y_train, cv=5)
@@ -57,13 +54,11 @@ def train_parameterized_KNN(name, train_set, test_set, neighbors=5, weights='uni
     train_set = pd.read_csv(data_dir / train_filename)
     test_set = pd.read_csv(data_dir / test_filename)
 
-    # Step 1.1: Seperate the last column from both data sets since it is the target
     x_train = train_set.drop(columns=["IsCanceled"])
     y_train = train_set["IsCanceled"]
     X_test = test_set.drop(columns=["IsCanceled"])
     y_test = test_set["IsCanceled"]
 
-    # Step 2: Run model with data
     knn = KNeighborsClassifier(
         n_neighbors=neighbors,
         weights=weights,
@@ -75,7 +70,6 @@ def train_parameterized_KNN(name, train_set, test_set, neighbors=5, weights='uni
     
     y_pred = knn.predict(X_test)
 
-    # Get prediction probabilities (required for ROC-AUC)
     y_prob = knn.predict_proba(X_test)[:, 1]
 
     show_test_results(knn, y_test, y_pred, y_prob, x_train, y_train, cv=5)
@@ -93,27 +87,18 @@ def predict_with_KNN(name, pred_set):
     print(y_pred)
 
 def show_test_results(knn, y_test, y_pred, y_prob, X_train, y_train, cv):
-    # Detailed text report for all classes
     print("Classification Report:")
     print(classification_report(y_test, y_pred))
 
-    # ROC-AUC
-    try:
-        roc_auc = roc_auc_score(y_test, y_prob)
-        print(f"ROC-AUC Score: {roc_auc:.4f}\n")
-    except Exception as e:
-        print(
-            "ROC-AUC skipped: ", e
-        )
+    roc_auc = roc_auc_score(y_test, y_prob)
+    print(f"ROC-AUC Score: {roc_auc:.4f}\n")
 
-    # Cross-validation
     cv_scores = cross_val_score(knn, X_train, y_train, cv=cv, scoring="accuracy")
 
     print(f"Cross-Validation Results ({cv}-Fold)")
     print(f"CV Accuracy Scores: {cv_scores}")
     print(f"Mean CV Accuracy:   {cv_scores.mean():.4f} (+/- {cv_scores.std():.4f})\n")
 
-    # Confusion matrix plot
     cm = confusion_matrix(y_test, y_pred)
     print("Confusion Matrix:\n", cm)
 

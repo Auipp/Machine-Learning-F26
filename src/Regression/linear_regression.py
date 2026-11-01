@@ -23,15 +23,12 @@ def train_base_Linear_Regression(name, train_set, test_set):
     train_set = pd.read_csv(data_dir / train_filename)
     test_set = pd.read_csv(data_dir / test_filename)
 
-    # Step 1.1: Seperate the last column from both data sets since it is the target
-
     x_train = train_set.drop(columns=["ADR"])
     y_train = train_set["ADR"]
 
     X_test = test_set.drop(columns=["ADR"])
     y_test = test_set["ADR"]
 
-    # Step 2: Run model with data
     linear_regress = SGDRegressor()
 
     linear_regress.fit(x_train, y_train)
@@ -50,15 +47,12 @@ def train_parameterized_Linear_Regression(name, train_set, test_set, loss='squar
     train_set = pd.read_csv(data_dir / train_filename)
     test_set = pd.read_csv(data_dir / test_filename)
 
-    # Step 1.1: Seperate the last column from both data sets since it is the target
-
     x_train = train_set.drop(columns=["ADR"])
     y_train = train_set["ADR"]
 
     x_test = test_set.drop(columns=["ADR"])
     y_test = test_set["ADR"]
 
-    # Step 2: Run model with data
     linear_regress = SGDRegressor(loss=loss, penalty=penalty, learning_rate=learning_rate, eta0=eta0, alpha=alpha, max_iter=max_iter, tol=tol)
 
     linear_regress.fit(x_train, y_train)
