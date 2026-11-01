@@ -22,53 +22,77 @@ current_dir = Path(__file__).resolve().parent
 data_dir = current_dir.resolve().parents[1] / "data"
 artifact_dir = current_dir.resolve().parents[1] / "artifacts"
 
-def train_KNN(name, train_set):
-    filename = f"{train_set}.csv"
+def train_base_KNN(name, train_set, test_set):
+    train_filename = f"{train_set}.csv"
+    test_filename = f"{test_set}.csv"
     model_filename =  f"{name}_knn.joblib"
 
-    train_set = pd.read_csv(data_dir / filename)
-    # Step 1.1: Seperate the last column from both data sets since it is the target
+    train_set = pd.read_csv(data_dir / train_filename)
+    test_set = pd.read_csv(data_dir / test_filename)
 
+    # Step 1.1: Seperate the last column from both data sets since it is the target
     x_train = train_set.drop(columns=["IsCanceled"])
     y_train = train_set["IsCanceled"]
+    x_test = test_set.drop(columns=["IsCanceled"])
+    y_test = test_set["IsCanceled"]
 
     # Step 2: Run model with data
     knn = KNeighborsClassifier()
 
     knn.fit(x_train, y_train)
-    show_cross_validation(knn, x_train, y_train, 5)
+    
+    y_pred = knn.predict(x_test)
 
+    # Get prediction probabilities (required for ROC-AUC)
+    y_prob = knn.predict_proba(x_test)[:, 1]
+
+    show_test_results(knn, y_test, y_pred, y_prob, x_train, y_train, cv=5)
     dump(knn, artifact_dir / model_filename)
-
-def test_KNN(name, test_set):
+    
+def train_parameterized_KNN(name, train_set, test_set, neighbors=5, weights='uniform', distance_metric='euclidean', power_parameter=2):
+    train_filename = f"{train_set}.csv"
     test_filename = f"{test_set}.csv"
     model_filename =  f"{name}_knn.joblib"
-    test_set = pd.read_csv(data_dir / test_filename)
-    knn = load(artifact_dir / model_filename)
 
+    train_set = pd.read_csv(data_dir / train_filename)
+    test_set = pd.read_csv(data_dir / test_filename)
+
+    # Step 1.1: Seperate the last column from both data sets since it is the target
+    x_train = train_set.drop(columns=["IsCanceled"])
+    y_train = train_set["IsCanceled"]
     X_test = test_set.drop(columns=["IsCanceled"])
     y_test = test_set["IsCanceled"]
 
+    # Step 2: Run model with data
+    knn = KNeighborsClassifier(
+        n_neighbors=neighbors,
+        weights=weights,
+        metric=distance_metric,
+        p=power_parameter
+    )
+
+    knn.fit(x_train, y_train)
+    
     y_pred = knn.predict(X_test)
 
     # Get prediction probabilities (required for ROC-AUC)
     y_prob = knn.predict_proba(X_test)[:, 1]
 
-    show_test_results(y_test, y_pred, y_prob)
+    show_test_results(knn, y_test, y_pred, y_prob, x_train, y_train, cv=5)
+    dump(knn, artifact_dir / model_filename)
 
-def show_test_results(y_test, y_pred, y_prob):
-    acc = accuracy_score(y_test, y_pred)
-    prec = precision_score(y_test, y_pred, average="binary")
-    rec = recall_score(y_test, y_pred, average="binary")
-    f1 = f1_score(y_test, y_pred, average="binary")
+def predict_with_KNN(name, pred_set):
+    pred_filename = f"{pred_set}.csv"
+    model_filename =  f"{name}_knn.joblib"
 
-    # Step 3: Evaluate the model's performance
-    print("Performance metrics")
-    print(f"Accuracy:  {acc:.4f}")
-    print(f"Precision: {prec:.4f}")
-    print(f"Recall:    {rec:.4f}")
-    print(f"F1-score:  {f1:.4f}\n")
+    pred_set = pd.read_csv(data_dir / pred_filename)
+    knn = load(artifact_dir / model_filename)
 
+    y_pred = knn.predict(pred_set)
+
+    print(y_pred)
+
+def show_test_results(knn, y_test, y_pred, y_prob, X_train, y_train, cv):
     # Detailed text report for all classes
     print("Classification Report:")
     print(classification_report(y_test, y_pred))
@@ -82,6 +106,13 @@ def show_test_results(y_test, y_pred, y_prob):
             "ROC-AUC skipped: ", e
         )
 
+    # Cross-validation
+    cv_scores = cross_val_score(knn, X_train, y_train, cv=cv, scoring="accuracy")
+
+    print(f"Cross-Validation Results ({cv}-Fold)")
+    print(f"CV Accuracy Scores: {cv_scores}")
+    print(f"Mean CV Accuracy:   {cv_scores.mean():.4f} (+/- {cv_scores.std():.4f})\n")
+
     # Confusion matrix plot
     cm = confusion_matrix(y_test, y_pred)
     print("Confusion Matrix:\n", cm)
@@ -90,17 +121,6 @@ def show_test_results(y_test, y_pred, y_prob):
     disp.plot(cmap=plt.cm.Blues)
     plt.title("KNN Confusion Matrix")
     plt.show()
-
-def show_cross_validation(knn, X_train, y_train, cv):
-    cv_scores = cross_val_score(knn, X_train, y_train, cv=cv, scoring="accuracy")
-
-    print(f"Cross-Validation Results ({cv}-Fold)")
-    print(f"CV Accuracy Scores: {cv_scores}")
-    print(f"Mean CV Accuracy:   {cv_scores.mean():.4f} (+/- {cv_scores.std():.4f})\n")
-        
-
-train_KNN("A", "hotel_train")
-test_KNN("A", "hotel_test")
 
 
 
