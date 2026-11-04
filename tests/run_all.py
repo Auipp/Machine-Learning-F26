@@ -1,71 +1,77 @@
+import argparse
 import sys
 import time
-import pathlib
-import importlib
-import traceback
-import argparse
+from pathlib import Path
 
-ROOT = pathlib.Path(__file__).parents[1]
-sys.path.insert(0, str(ROOT))
+import pytest
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+TEST_DIR = ROOT / "tests"
 
 SUITES = [
-    ("Loader",       "tests.test_loader"),
-    ("Transformers", "tests.test_transformers"),
-    ("Pipeline",     "tests.test_pipeline"),
-    ("Integration",  "tests.test_integration"),
+    ("Loader", TEST_DIR / "test_loader.py"),
+    ("Transformers", TEST_DIR / "test_transformers.py"),
+    ("Pipeline", TEST_DIR / "test_pipeline.py"),
+    ("Integration", TEST_DIR / "test_integration.py"),
 ]
-
-FAST_SKIP = {"Integration"}
-
-
-def run_suite(label, module_path):
-    mod = importlib.import_module(module_path)
-    tests = sorted(
-        (name, fn)
-        for name, fn in vars(mod).items()
-        if name.startswith("test_") and callable(fn)
-    )
-    passed = failed = 0
-    for name, fn in tests:
-        try:
-            fn()
-            print(f"  PASS  {name}")
-            passed += 1
-        except Exception:
-            tb = traceback.format_exc().strip().splitlines()[-1]
-            print(f"  FAIL  {name}")
-            print(f"        {tb}")
-            failed += 1
-    return passed, failed
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--fast", action="store_true")
-    args = parser.parse_args()
+    parser = argparse.ArgumentParser(
+        description="Run all project test suites with pytest."
+    )
+    parser.add_argument(
+        "--fast",
+        action="store_true",
+        help="Skip integration tests for a faster test run.",
+    )
+    args, pytest_args = parser.parse_known_args()
 
-    total_pass = total_fail = 0
-    t_start = time.time()
+    selected_suites = [
+        (label, path)
+        for label, path in SUITES
+        if not (args.fast and label == "Integration")
+    ]
 
-    for label, module_path in SUITES:
-        if args.fast and label in FAST_SKIP:
-            print(f"\n{'─'*60}")
-            print(f"  [{label}]  SKIPPED (--fast)")
-            continue
-        print(f"\n{'─'*60}")
-        print(f"  [{label}]")
-        print(f"{'─'*60}")
-        p, f = run_suite(label, module_path)
-        total_pass += p
-        total_fail += f
-        print(f"  → {p} passed, {f} failed")
+    missing = [str(path) for _, path in selected_suites if not path.is_file()]
+    if missing:
+        print("The following test files could not be found:")
+        for path in missing:
+            print(f"  - {path}")
+        return 1
 
-    elapsed = time.time() - t_start
-    print(f"\n{'═'*60}")
-    print(f"  TOTAL  {total_pass} passed, {total_fail} failed  ({elapsed:.1f}s)")
-    print(f"{'═'*60}")
-    sys.exit(1 if total_fail else 0)
+    print("=" * 60)
+    print("  PROJECT TEST SUITES")
+    print("=" * 60)
+
+    for label, path in SUITES:
+        status = "SKIPPED (--fast)" if args.fast and label == "Integration" else "SELECTED"
+        print(f"  {label:<15} {status}")
+
+    print("=" * 60)
+
+    pytest_paths = [str(path) for _, path in selected_suites]
+
+    pytest_options = ["-ra"]
+    if not any(arg in ("-v", "--verbose", "-q", "--quiet") for arg in pytest_args):
+        pytest_options.append("-q")
+
+    start = time.time()
+    exit_code = pytest.main(pytest_options + pytest_args + pytest_paths)
+    elapsed = time.time() - start
+
+    print()
+    print("=" * 60)
+    print(f"  Finished in {elapsed:.1f}s")
+    print("=" * 60)
+
+    return int(exit_code)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

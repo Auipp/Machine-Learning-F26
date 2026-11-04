@@ -1,13 +1,3 @@
-"""Smoke-tests for the preprocessing pipeline.
-
-Verifies that each task pipeline:
-- Fits on training data without errors
-- Transforms train, val, and test sets to numpy arrays of consistent width
-- Produces no NaN or Inf values in the output
-- Does NOT fit on val/test (leakage guard: output shape must be identical
-  when transformer is fit on a subset of train)
-"""
-
 import numpy as np
 import pytest
 
@@ -48,12 +38,10 @@ def test_fit_transform_no_errors(splits, task):
     X_val_t = pipe.transform(X_val)
     X_test_t = pipe.transform(X_test)
 
-    # All outputs must be 2-D numpy arrays with consistent feature count
     assert X_train_t.ndim == 2
     assert X_val_t.shape[1] == X_train_t.shape[1], "val/train feature mismatch"
     assert X_test_t.shape[1] == X_train_t.shape[1], "test/train feature mismatch"
 
-    # No NaN or Inf
     assert not np.isnan(X_train_t).any(), "NaN in train output"
     assert not np.isinf(X_train_t).any(), "Inf in train output"
     assert not np.isnan(X_val_t).any(), "NaN in val output"
@@ -67,9 +55,8 @@ def test_no_leakage_cols_in_regression_output(splits):
     X_train = _get_X(train, "regression")
 
     pipe = build_preprocessor("regression")
-    # Pipeline must fit without error on X that still contains leakage columns
-    # (they are implicitly dropped by ColumnTransformer remainder='drop')
-    pipe.fit_transform(X_train)  # should not raise
+    
+    pipe.fit_transform(X_train)  
 
 
 def test_train_only_fit(splits):
@@ -96,7 +83,6 @@ def test_train_only_fit(splits):
     val_from_full = pipe_full.transform(X_val)
     val_from_half = pipe_half.transform(X_val)
 
-    # Each pipeline's val output must be consistent with its own train output
     train_from_full = pipe_full.transform(X_full)
     train_from_half = pipe_half.transform(X_half)
 
@@ -105,6 +91,5 @@ def test_train_only_fit(splits):
     assert val_from_half.shape[1] == train_from_half.shape[1], \
         "val feature count must match train for pipe_half"
 
-    # Both must produce clean arrays (no NaN, no Inf)
     assert not np.isnan(val_from_full).any()
     assert not np.isnan(val_from_half).any()

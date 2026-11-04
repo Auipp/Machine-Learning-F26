@@ -1,171 +1,203 @@
 import sys
-import pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).parents[1]))
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from src.data.loader import load_raw, clean
+import pytest
+from sklearn.utils.validation import check_is_fitted
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from src.preprocessing.transformers import FeatureEngineer, TopNGrouper
 
 
-def _sample():
-    return clean(load_raw()).head(500).copy()
+def _synthetic_bookings():
+    months = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    ]
+    return pd.DataFrame({
+        "ArrivalDateMonth": months,
+        "Children": [0, 1, np.nan, 0, 2, 0, 1, 0, 0, 1, 0, 0],
+        "Country": ["PRT"] * 11 + [np.nan],
+        "Agent": [9, 9, np.nan, 10, 10, 10, np.nan, 11, 11, 11, 12, np.nan],
+        "Company": [np.nan] * 10 + [123, np.nan],
+        "MarketSegment": ["Online TA"] * 11 + ["Undefined"],
+        "DistributionChannel": ["TA/TO"] * 12,
+        "StaysInWeekendNights": [1] * 12,
+        "StaysInWeekNights": [2] * 12,
+        "Adults": [2] * 12,
+        "Babies": [0] * 12,
+    })
 
 
-def test_fe_fit_returns_self():
-    fe = FeatureEngineer()
-    assert fe.fit(_sample()) is fe
-
-def test_fe_month_is_numeric_1_to_12():
-    out = FeatureEngineer().transform(_sample())
-    assert pd.api.types.is_numeric_dtype(out["ArrivalDateMonth"])
-    assert out["ArrivalDateMonth"].between(1, 12).all()
-
-def test_fe_all_12_months_mapped():
-    months = ["January","February","March","April","May","June",
-              "July","August","September","October","November","December"]
-    df = pd.DataFrame({"ArrivalDateMonth": months,
-                       "Children": [0]*12, "Country": ["PRT"]*12,
-                       "Agent": [np.nan]*12, "Company": [np.nan]*12,
-                       "StaysInWeekendNights": [1]*12, "StaysInWeekNights": [2]*12,
-                       "Adults": [2]*12, "Babies": [0]*12})
-    out = FeatureEngineer().transform(df)
-    assert list(out["ArrivalDateMonth"]) == list(range(1, 13))
-
-def test_fe_children_no_nan():
-    assert FeatureEngineer().transform(_sample())["Children"].isna().sum() == 0
-
-def test_fe_country_no_nan():
-    assert FeatureEngineer().transform(_sample())["Country"].isna().sum() == 0
-
-def test_fe_country_unknown_fills():
-    df = _sample().copy()
-    df.loc[df.index[:5], "Country"] = np.nan
-    out = FeatureEngineer().transform(df)
-    assert (out["Country"] == "Unknown").sum() == 5
-
-def test_fe_agent_is_string():
-    out = FeatureEngineer().transform(_sample())
-    assert isinstance(out["Agent"].iloc[0], str)
-
-def test_fe_agent_no_nan():
-    assert FeatureEngineer().transform(_sample())["Agent"].isna().sum() == 0
-
-def test_fe_agent_na_becomes_noagent():
-    df = _sample().copy()
-    df["Agent"] = np.nan
-    out = FeatureEngineer().transform(df)
-    assert (out["Agent"] == "NoAgent").all()
-
-def test_fe_agent_numeric_ids_are_strings():
-    out = FeatureEngineer().transform(_sample())
-    non_noagent = out.loc[out["Agent"] != "NoAgent", "Agent"]
-    assert not non_noagent.str.endswith(".0").any()
-
-def test_fe_has_company_binary():
-    out = FeatureEngineer().transform(_sample())
-    assert "HasCompany" in out.columns
-    assert set(out["HasCompany"].unique()).issubset({0, 1})
-
-def test_fe_company_column_dropped():
-    assert "Company" not in FeatureEngineer().transform(_sample()).columns
-
-def test_fe_has_agent_binary():
-    out = FeatureEngineer().transform(_sample())
-    assert "HasAgent" in out.columns
-    assert set(out["HasAgent"].unique()).issubset({0, 1})
-
-def test_fe_has_agent_consistent_with_agent():
-    out = FeatureEngineer().transform(_sample())
-    assert (out["HasAgent"] == (out["Agent"] != "NoAgent").astype(int)).all()
-
-def test_fe_total_nights_correct():
-    df = _sample()
-    out = FeatureEngineer().transform(df)
-    expected = df["StaysInWeekendNights"] + df["StaysInWeekNights"]
-    assert (out["TotalNights"].values == expected.values).all()
-
-def test_fe_total_guests_correct():
-    df = _sample()
-    out = FeatureEngineer().transform(df)
-    expected = df["Adults"] + df["Children"].fillna(0) + df["Babies"]
-    assert np.allclose(out["TotalGuests"].values, expected.values)
-
-def test_fe_transform_returns_dataframe():
-    assert isinstance(FeatureEngineer().transform(_sample()), pd.DataFrame)
+def test_feature_engineer_fit_returns_self():
+    transformer = FeatureEngineer()
+    assert transformer.fit(_synthetic_bookings()) is transformer
 
 
-def _freq_data():
-    return pd.DataFrame({"x": ["A"]*100 + ["B"]*60 + ["C"]*30 + ["D"]*10})
-
-def test_tng_fit_returns_self():
-    assert TopNGrouper(n=3).fit(_freq_data()[["x"]]) is not None
-
-def test_tng_top_n_retained():
-    g = TopNGrouper(n=3)
-    g.fit(_freq_data()[["x"]])
-    assert g.top_categories_ == {"A", "B", "C"}
-
-def test_tng_n_respected():
-    data = pd.DataFrame({"x": list("ABCDEFGHIJ") * 10})
-    g = TopNGrouper(n=5).fit(data[["x"]])
-    assert len(g.top_categories_) == 5
-
-def test_tng_rare_becomes_other():
-    g = TopNGrouper(n=3).fit(_freq_data()[["x"]])
-    out = g.transform(_freq_data()[["x"]]).flatten()
-    assert "D" not in out
-    assert "Other" in out
-
-def test_tng_top_cats_preserved():
-    g = TopNGrouper(n=3).fit(_freq_data()[["x"]])
-    out = g.transform(_freq_data()[["x"]]).flatten()
-    assert "A" in out and "B" in out and "C" in out
-
-def test_tng_unseen_at_inference():
-    train = pd.DataFrame({"x": ["A"]*50 + ["B"]*30})
-    test  = pd.DataFrame({"x": ["A", "B", "BRAND_NEW", "NEVER_SEEN"]})
-    g = TopNGrouper(n=2).fit(train[["x"]])
-    out = g.transform(test[["x"]]).flatten()
-    assert "BRAND_NEW" not in out
-    assert "NEVER_SEEN" not in out
-    assert out[2] == "Other" and out[3] == "Other"
-
-def test_tng_output_shape_2d():
-    data = pd.DataFrame({"x": ["A", "B", "C"]})
-    g = TopNGrouper(n=2).fit(data[["x"]])
-    assert g.transform(data[["x"]]).shape == (3, 1)
-
-def test_tng_output_is_numpy():
-    data = pd.DataFrame({"x": ["A", "B"]})
-    g = TopNGrouper(n=1).fit(data[["x"]])
-    assert isinstance(g.transform(data[["x"]]), np.ndarray)
-
-def test_tng_custom_other_label():
-    data = pd.DataFrame({"x": ["A"]*50 + ["Z"]*5})
-    g = TopNGrouper(n=1, other_label="RARE").fit(data[["x"]])
-    out = g.transform(data[["x"]]).flatten()
-    assert "RARE" in out and "Z" not in out
-
-def test_tng_accepts_series():
-    data = pd.Series(["A"]*50 + ["B"]*30 + ["C"]*10)
-    g = TopNGrouper(n=2).fit(data)
-    assert g.transform(data).shape[1] == 1
+def test_feature_engineer_months_are_mapped_to_one_through_twelve():
+    result = FeatureEngineer().fit_transform(_synthetic_bookings())
+    assert result["ArrivalDateMonth"].tolist() == list(range(1, 13))
+    assert pd.api.types.is_numeric_dtype(result["ArrivalDateMonth"])
 
 
-if __name__ == "__main__":
-    tests = [(k, v) for k, v in sorted(globals().items())
-             if k.startswith("test_") and callable(v)]
-    passed = failed = 0
-    print(f"Running {len(tests)} transformer tests...\n")
-    for name, fn in tests:
-        try:
-            fn()
-            print(f"  PASS  {name}")
-            passed += 1
-        except Exception as exc:
-            print(f"  FAIL  {name}: {exc}")
-            failed += 1
-    print(f"\n{passed} passed, {failed} failed")
-    if failed:
-        sys.exit(1)
+def test_feature_engineer_accepts_numeric_months():
+    data = _synthetic_bookings()
+    data["ArrivalDateMonth"] = list(range(1, 13))
+    result = FeatureEngineer().fit_transform(data)
+    assert result["ArrivalDateMonth"].tolist() == list(range(1, 13))
+
+
+def test_feature_engineer_fills_children_missing_with_zero():
+    result = FeatureEngineer().fit_transform(_synthetic_bookings())
+    assert result["Children"].isna().sum() == 0
+    assert result.loc[2, "Children"] == 0
+
+
+def test_feature_engineer_fills_missing_country_and_unknown_tokens():
+    data = _synthetic_bookings()
+    data.loc[0, "Country"] = np.nan
+    data.loc[1, "Country"] = "NULL"
+    result = FeatureEngineer().fit_transform(data)
+    assert result.loc[0, "Country"] == "Unknown"
+    assert result.loc[1, "Country"] == "Unknown"
+
+
+def test_feature_engineer_fills_missing_agent_with_noagent():
+    data = _synthetic_bookings()
+    data["Agent"] = np.nan
+    result = FeatureEngineer().fit_transform(data)
+    assert (result["Agent"] == "NoAgent").all()
+
+
+def test_feature_engineer_agent_ids_are_strings_without_decimal_suffix():
+    result = FeatureEngineer().fit_transform(_synthetic_bookings())
+    assert result["Agent"].map(lambda value: isinstance(value, str)).all()
+    numeric_agents = result.loc[result["Agent"] != "NoAgent", "Agent"]
+    assert not numeric_agents.str.endswith(".0").any()
+
+
+def test_feature_engineer_creates_has_agent_flag():
+    result = FeatureEngineer().fit_transform(_synthetic_bookings())
+    assert set(result["HasAgent"].unique()).issubset({0, 1})
+    expected = (result["Agent"] != "NoAgent").astype(int)
+    assert result["HasAgent"].equals(expected)
+
+
+def test_feature_engineer_creates_has_company_flag_and_drops_company():
+    result = FeatureEngineer().fit_transform(_synthetic_bookings())
+    assert "Company" not in result.columns
+    assert "HasCompany" in result.columns
+    assert set(result["HasCompany"].unique()).issubset({0, 1})
+
+
+def test_feature_engineer_creates_total_nights():
+    data = _synthetic_bookings()
+    result = FeatureEngineer().fit_transform(data)
+    expected = data["StaysInWeekendNights"] + data["StaysInWeekNights"]
+    np.testing.assert_array_equal(result["TotalNights"], expected)
+
+
+def test_feature_engineer_creates_total_guests():
+    data = _synthetic_bookings()
+    result = FeatureEngineer().fit_transform(data)
+    expected = data["Adults"] + data["Children"].fillna(0) + data["Babies"]
+    np.testing.assert_array_equal(result["TotalGuests"], expected)
+
+
+def test_feature_engineer_creates_optional_columns_when_absent():
+    data = _synthetic_bookings().drop(
+        columns=["Company", "Agent", "Children", "Country",
+                 "MarketSegment", "DistributionChannel"]
+    )
+    result = FeatureEngineer().fit_transform(data)
+    for col in ["HasCompany", "HasAgent", "Children", "Country",
+                "Agent", "MarketSegment", "DistributionChannel"]:
+        assert col in result.columns
+
+
+def test_feature_engineer_returns_dataframe_and_feature_names():
+    data = _synthetic_bookings()
+    transformer = FeatureEngineer().fit(data)
+    result = transformer.transform(data)
+    assert isinstance(result, pd.DataFrame)
+    assert list(transformer.get_feature_names_out()) == list(result.columns)
+
+
+def _frequency_data():
+    return pd.DataFrame({"category": ["A"] * 100 + ["B"] * 60 + ["C"] * 30 + ["D"] * 10})
+
+
+def test_top_n_grouper_fit_returns_self():
+    grouper = TopNGrouper(n=3)
+    assert grouper.fit(_frequency_data()) is grouper
+
+
+def test_top_n_grouper_retains_most_frequent_categories():
+    grouper = TopNGrouper(n=3).fit(_frequency_data())
+    assert grouper.top_categories_ == {"A", "B", "C"}
+
+
+def test_top_n_grouper_respects_n():
+    data = pd.DataFrame({"category": list("ABCDEFGHIJ") * 10})
+    grouper = TopNGrouper(n=5).fit(data)
+    assert len(grouper.top_categories_) == 5
+
+
+def test_top_n_grouper_maps_rare_categories_to_other():
+    data = _frequency_data()
+    grouper = TopNGrouper(n=3).fit(data)
+    result = grouper.transform(data).ravel()
+    assert "D" not in result
+    assert "Other" in result
+
+
+def test_top_n_grouper_preserves_top_categories():
+    data = _frequency_data()
+    grouper = TopNGrouper(n=3).fit(data)
+    result = set(grouper.transform(data).ravel())
+    assert {"A", "B", "C"}.issubset(result)
+
+
+def test_top_n_grouper_maps_unseen_inference_values_to_other():
+    train = pd.DataFrame({"category": ["A"] * 50 + ["B"] * 30})
+    test = pd.DataFrame({"category": ["A", "B", "BRAND_NEW", "NEVER_SEEN"]})
+    grouper = TopNGrouper(n=2).fit(train)
+    result = grouper.transform(test).ravel().tolist()
+    assert result == ["A", "B", "Other", "Other"]
+
+
+def test_top_n_grouper_output_is_two_dimensional_numpy():
+    data = pd.DataFrame({"category": ["A", "B", "C"]})
+    result = TopNGrouper(n=2).fit(data).transform(data)
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (3, 1)
+
+
+def test_top_n_grouper_accepts_series():
+    data = pd.Series(["A"] * 50 + ["B"] * 30 + ["C"] * 10)
+    grouper = TopNGrouper(n=2).fit(data)
+    assert grouper.transform(data).shape == (90, 1)
+
+
+def test_top_n_grouper_supports_custom_other_label():
+    data = pd.DataFrame({"category": ["A"] * 50 + ["Z"] * 5})
+    result = TopNGrouper(n=1, other_label="RARE").fit(data).transform(data).ravel()
+    assert "RARE" in result
+    assert "Z" not in result
+
+
+def test_top_n_grouper_tie_break_is_deterministic():
+    data = pd.DataFrame({"category": ["x", "y", "z", "x", "y", "z"]})
+    first = TopNGrouper(n=2).fit(data).top_categories_
+    shuffled = TopNGrouper(n=2).fit(data.sample(frac=1, random_state=7)).top_categories_
+    assert first == shuffled == {"x", "y"}
+
+
+def test_top_n_grouper_transform_before_fit_raises():
+    grouper = TopNGrouper(n=2)
+    with pytest.raises(Exception):
+        grouper.transform(pd.DataFrame({"category": ["A"]}))

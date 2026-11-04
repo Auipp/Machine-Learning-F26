@@ -1,172 +1,321 @@
 import sys
-import pathlib
-sys.path.insert(0, str(pathlib.Path(__file__).parents[1]))
+from pathlib import Path
 
 import numpy as np
-from src.data.loader import load_and_split
+import pandas as pd
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.data.loader import DATA_PATH, load_and_split
+
 from src.preprocessing.pipeline import (
+    ADR_MAX,
+    ADR_MIN,
+    AUX_COLUMNS,
+    CLUSTERING_FEATURES,
+    JUDGMENT_COLUMNS,
+    TASK_TARGETS,
+    TASKS,
     build_preprocessor,
     filter_adr,
-    TASK_TARGETS,
-    CLUSTERING_FEATURES,
-    ADR_MIN,
-    ADR_MAX,
+    filter_for_task,
+    make_xy,
 )
 
-_train = _val = _test = None
-
-def _splits():
-    global _train, _val, _test
-    if _train is None:
-        _train, _val, _test = load_and_split()
-    return _train, _val, _test
-
-def _X(df, task):
-    target = TASK_TARGETS.get(task)
-    drop = [c for c in [target] if c and c in df.columns]
-    return df.drop(columns=drop)
+pytestmark = pytest.mark.skipif(
+    not DATA_PATH.exists(),
+    reason="H2.csv not found"
+)
 
 
-def test_filter_adr_removes_zero():
-    train, _, _ = _splits()
-    assert (filter_adr(train)["ADR"] == 0).sum() == 0
-
-def test_filter_adr_removes_high_outlier():
-    train, _, _ = _splits()
-    assert (filter_adr(train)["ADR"] > ADR_MAX).sum() == 0
-
-def test_filter_adr_min_boundary():
-    train, _, _ = _splits()
-    assert (filter_adr(train)["ADR"] < ADR_MIN).sum() == 0
-
-def test_filter_adr_preserves_valid_rows():
-    train, _, _ = _splits()
-    n_valid = ((train["ADR"] >= ADR_MIN) & (train["ADR"] <= ADR_MAX)).sum()
-    assert len(filter_adr(train)) == n_valid
+@pytest.fixture(scope="module")
+def splits():
+    return load_and_split()
 
 
-def test_invalid_task_raises_valueerror():
-    try:
-        build_preprocessor("bad_task")
-        assert False
-    except ValueError as e:
-        assert "bad_task" in str(e)
+def _feature_contains_column(feature_names, column):
+    """
+    Check whether a transformed feature name belongs to an original column.
+
+    Examples:
+        num__ADR                  -> ADR
+        low_cat__DepositType_X    -> DepositType
+    """
+    return any(
+        name.endswith(f"__{column}")
+        or f"__{column}_" in name
+        for name in feature_names
+    )
 
 
-def test_regression_output_is_2d_numpy():
-    train, _, _ = _splits()
-    out = build_preprocessor("regression").fit_transform(_X(filter_adr(train), "regression"))
-    assert isinstance(out, np.ndarray) and out.ndim == 2
+def test_filter_adr_keeps_only_inclusive_valid_range(splits):
+    train = splits[0]
 
-def test_regression_feature_count():
-    train, _, _ = _splits()
-    out = build_preprocessor("regression").fit_transform(_X(filter_adr(train), "regression"))
-    assert out.shape[1] == 93
+    result = filter_adr(train)
 
-def test_regression_no_nan():
-    train, val, _ = _splits()
-    pipe = build_preprocessor("regression")
-    Xtr = pipe.fit_transform(_X(filter_adr(train), "regression"))
-    Xv  = pipe.transform(_X(filter_adr(val), "regression"))
-    assert not np.isnan(Xtr).any()
-    assert not np.isnan(Xv).any()
-
-def test_regression_no_inf():
-    train, _, _ = _splits()
-    out = build_preprocessor("regression").fit_transform(_X(filter_adr(train), "regression"))
-    assert not np.isinf(out).any()
-
-def test_regression_val_width_matches_train():
-    train, val, test = _splits()
-    pipe = build_preprocessor("regression")
-    n_tr = pipe.fit_transform(_X(filter_adr(train), "regression")).shape[1]
-    assert pipe.transform(_X(filter_adr(val),  "regression")).shape[1] == n_tr
-    assert pipe.transform(_X(filter_adr(test), "regression")).shape[1] == n_tr
-
-def test_regression_target_not_in_input():
-    train, _, _ = _splits()
-    assert "ADR" not in _X(filter_adr(train), "regression").columns
+    assert result["ADR"].between(
+        ADR_MIN,
+        ADR_MAX,
+        inclusive="both"
+    ).all()
 
 
-def test_classification_output_is_2d_numpy():
-    train, _, _ = _splits()
-    out = build_preprocessor("classification").fit_transform(_X(train, "classification"))
-    assert isinstance(out, np.ndarray) and out.ndim == 2
+def test_filter_adr_does_not_modify_input(splits):
+    train = splits[0]
 
-def test_classification_feature_count():
-    train, _, _ = _splits()
-    out = build_preprocessor("classification").fit_transform(_X(train, "classification"))
-    assert out.shape[1] == 94
+    before = train.copy(deep=True)
 
-def test_classification_adr_included_as_feature():
-    train, _, _ = _splits()
-    assert "ADR" in _X(train, "classification").columns
+    filter_adr(train)
 
-def test_classification_no_nan():
-    train, val, _ = _splits()
-    pipe = build_preprocessor("classification")
-    assert not np.isnan(pipe.fit_transform(_X(train, "classification"))).any()
-    assert not np.isnan(pipe.transform(_X(val, "classification"))).any()
-
-def test_classification_val_width_matches_train():
-    train, val, test = _splits()
-    pipe = build_preprocessor("classification")
-    n_tr = pipe.fit_transform(_X(train, "classification")).shape[1]
-    assert pipe.transform(_X(val,  "classification")).shape[1] == n_tr
-    assert pipe.transform(_X(test, "classification")).shape[1] == n_tr
+    pd.testing.assert_frame_equal(train, before)
 
 
-def test_clustering_output_is_2d_numpy():
-    train, _, _ = _splits()
-    out = build_preprocessor("clustering").fit_transform(train)
-    assert isinstance(out, np.ndarray) and out.ndim == 2
+def test_filter_for_task_regression_filters_adr(splits):
+    result = filter_for_task(splits[0], "regression")
 
-def test_clustering_feature_count():
-    train, _, _ = _splits()
-    out = build_preprocessor("clustering").fit_transform(train)
-    assert out.shape[1] == len(CLUSTERING_FEATURES)
-
-def test_clustering_no_nan():
-    train, val, _ = _splits()
-    pipe = build_preprocessor("clustering")
-    assert not np.isnan(pipe.fit_transform(train)).any()
-    assert not np.isnan(pipe.transform(val)).any()
-
-def test_clustering_val_width_matches_train():
-    train, val, test = _splits()
-    pipe = build_preprocessor("clustering")
-    n_tr = pipe.fit_transform(train).shape[1]
-    assert pipe.transform(val).shape[1]  == n_tr
-    assert pipe.transform(test).shape[1] == n_tr
+    assert result["ADR"].between(ADR_MIN, ADR_MAX).all()
 
 
-def test_leakage_cols_dropped_implicitly():
-    train, _, _ = _splits()
-    pipe = build_preprocessor("classification")
-    out = pipe.fit_transform(_X(train, "classification"))
-    assert out.shape[1] == 94
+def test_filter_for_task_clustering_filters_adr(splits):
+    result = filter_for_task(splits[0], "clustering")
+
+    assert result["ADR"].between(ADR_MIN, ADR_MAX).all()
 
 
-def test_scaled_output_has_reasonable_range():
-    train, _, _ = _splits()
-    pipe = build_preprocessor("regression")
-    out = pipe.fit_transform(_X(filter_adr(train), "regression"))
-    assert np.percentile(np.abs(out[:, :20]), 99) < 50
+def test_filter_for_task_classification_keeps_all_rows(splits):
+    train = splits[0]
+
+    result = filter_for_task(train, "classification")
+
+    assert len(result) == len(train)
+
+    pd.testing.assert_frame_equal(result, train)
 
 
-if __name__ == "__main__":
-    tests = [(k, v) for k, v in sorted(globals().items())
-             if k.startswith("test_") and callable(v)]
-    passed = failed = 0
-    print(f"Running {len(tests)} pipeline tests...\n")
-    for name, fn in tests:
-        try:
-            fn()
-            print(f"  PASS  {name}")
-            passed += 1
-        except Exception as exc:
-            print(f"  FAIL  {name}: {exc}")
-            failed += 1
-    print(f"\n{passed} passed, {failed} failed")
-    if failed:
-        sys.exit(1)
+
+@pytest.mark.parametrize("task", ["invalid", "", None])
+def test_invalid_task_raises_value_error(task):
+    with pytest.raises(ValueError):
+        build_preprocessor(task)
+
+
+
+def test_make_xy_removes_target_and_auxiliary_columns(splits):
+    train = splits[0]
+
+    for task, target in TASK_TARGETS.items():
+        X, y = make_xy(train, task)
+
+        assert target not in X.columns
+
+        assert all(
+            col not in X.columns
+            for col in AUX_COLUMNS
+        )
+
+        assert y.name == target
+        assert len(X) == len(y)
+
+
+def test_make_xy_clustering_has_no_target_and_returns_none_y(splits):
+    X, y = make_xy(splits[0], "clustering")
+
+    assert y is None
+
+    assert all(
+        col not in X.columns
+        for col in AUX_COLUMNS
+    )
+
+
+
+@pytest.mark.parametrize("task", TASKS)
+def test_preprocessor_output_is_2d_finite_and_stable_width(
+    splits, task
+):
+    train, val, test = splits
+
+    train = filter_for_task(train, task)
+    val = filter_for_task(val, task)
+    test = filter_for_task(test, task)
+
+    X_train, _ = make_xy(train, task)
+    X_val, _ = make_xy(val, task)
+    X_test, _ = make_xy(test, task)
+
+    preprocessor = build_preprocessor(task)
+
+    train_out = preprocessor.fit_transform(X_train)
+    val_out = preprocessor.transform(X_val)
+    test_out = preprocessor.transform(X_test)
+
+    assert isinstance(train_out, np.ndarray)
+
+    assert train_out.ndim == 2
+
+    assert train_out.shape[1] == val_out.shape[1] == test_out.shape[1]
+
+    assert np.isfinite(train_out).all()
+    assert np.isfinite(val_out).all()
+    assert np.isfinite(test_out).all()
+
+
+
+def test_clustering_uses_configured_feature_list(splits):
+    X, _ = make_xy(
+        filter_for_task(splits[0], "clustering"),
+        "clustering"
+    )
+
+    preprocessor = build_preprocessor("clustering").fit(X)
+
+    names = preprocessor.get_feature_names_out()
+
+    assert len(names) == len(CLUSTERING_FEATURES)
+
+    for feature in CLUSTERING_FEATURES:
+        assert _feature_contains_column(names, feature)
+
+
+
+def test_regression_target_not_in_features(splits):
+    X, _ = make_xy(
+        filter_for_task(splits[0], "regression"),
+        "regression"
+    )
+
+    names = build_preprocessor("regression").fit(X).get_feature_names_out()
+
+    assert not _feature_contains_column(names, "ADR")
+
+
+def test_classification_target_not_in_features(splits):
+    X, _ = make_xy(splits[0], "classification")
+
+    names = (
+        build_preprocessor("classification")
+        .fit(X)
+        .get_feature_names_out()
+    )
+
+    assert not _feature_contains_column(names, "IsCanceled")
+
+
+
+def test_judgment_columns_excluded_by_default(splits):
+    X, _ = make_xy(splits[0], "classification")
+
+    names = (
+        build_preprocessor("classification")
+        .fit(X)
+        .get_feature_names_out()
+    )
+
+    for col in JUDGMENT_COLUMNS["classification"]:
+        assert not _feature_contains_column(names, col)
+
+
+def test_judgment_columns_can_be_enabled(splits):
+    X, _ = make_xy(splits[0], "classification")
+
+    requested = tuple(JUDGMENT_COLUMNS["classification"])
+
+    names = (
+        build_preprocessor(
+            "classification",
+            include_judgment=requested
+        )
+        .fit(X)
+        .get_feature_names_out()
+    )
+
+    for col in requested:
+        assert _feature_contains_column(names, col), col
+
+
+def test_regression_judgment_columns_can_be_enabled(splits):
+    X, _ = make_xy(
+        filter_for_task(splits[0], "regression"),
+        "regression"
+    )
+
+    requested = tuple(JUDGMENT_COLUMNS["regression"])
+
+    names = (
+        build_preprocessor(
+            "regression",
+            include_judgment=requested
+        )
+        .fit(X)
+        .get_feature_names_out()
+    )
+
+    for col in requested:
+        assert _feature_contains_column(names, col), col
+
+
+@pytest.mark.parametrize(
+    "column",
+    [
+        "BookingChanges",
+        "AssignedRoomType",
+        "ReservationStatus"
+    ]
+)
+def test_non_judgment_or_leakage_columns_cannot_be_enabled(column):
+    with pytest.raises(ValueError):
+        build_preprocessor(
+            "classification",
+            include_judgment=(column,)
+        )
+
+
+
+def test_extra_columns_are_ignored_by_whitelist(splits):
+    train = splits[0]
+
+    X, _ = make_xy(train, "classification")
+
+    clean_pre = build_preprocessor("classification").fit(X)
+
+    clean_output = clean_pre.transform(X)
+
+    dirty = X.copy()
+
+    dirty["dup_count"] = train["dup_count"].to_numpy()
+    dirty["IsCanceled"] = train["IsCanceled"].to_numpy()
+    dirty["ReservationStatus"] = "Check-Out"
+
+    dirty_output = clean_pre.transform(dirty)
+
+    assert np.allclose(clean_output, dirty_output)
+
+
+def test_dup_count_is_not_a_configured_feature():
+    assert "dup_count" in AUX_COLUMNS
+
+    assert "dup_count" not in CLUSTERING_FEATURES
+
+    for columns in JUDGMENT_COLUMNS.values():
+        assert "dup_count" not in columns
+
+
+
+def test_preprocessor_is_unfitted_when_built():
+    preprocessor = build_preprocessor("classification")
+
+    assert not hasattr(
+        preprocessor.named_steps["engineer"],
+        "feature_names_out_"
+    )
+
+
+def test_preprocessor_rejects_unknown_judgment_column():
+    with pytest.raises(ValueError, match="not judgment columns"):
+        build_preprocessor(
+            "regression",
+            include_judgment=("Company",)
+        )

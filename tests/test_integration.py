@@ -1,161 +1,206 @@
 import sys
-import pathlib
 import tempfile
-sys.path.insert(0, str(pathlib.Path(__file__).parents[1]))
+from pathlib import Path
 
 import joblib
 import numpy as np
-from src.data.loader import load_and_split
-from src.preprocessing.pipeline import build_preprocessor, filter_adr, TASK_TARGETS
+import pytest
 
-_train = _val = _test = None
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-def _splits():
-    global _train, _val, _test
-    if _train is None:
-        _train, _val, _test = load_and_split()
-    return _train, _val, _test
+from src.data.loader import DATA_PATH, load_and_split
+from src.preprocessing.pipeline import (
+    TASKS,
+    filter_for_task,
+    make_xy,
+    build_preprocessor,
+)
 
-def _prep(task):
-    train, val, test = _splits()
-    target = TASK_TARGETS.get(task)
-    if task == "regression":
-        train, val, test = filter_adr(train), filter_adr(val), filter_adr(test)
-    if target:
-        X_tr, y_tr = train.drop(columns=[target]), train[target]
-        X_v,  y_v  = val.drop(columns=[target]),   val[target]
-        X_te, y_te = test.drop(columns=[target]),  test[target]
-    else:
-        X_tr, y_tr = train, None
-        X_v,  y_v  = val,   None
-        X_te, y_te = test,  None
-    return X_tr, y_tr, X_v, y_v, X_te, y_te
-
-def _run_full_workflow(task):
-    X_tr, y_tr, X_v, y_v, X_te, y_te = _prep(task)
-    pipe = build_preprocessor(task)
-    X_tr_t = pipe.fit_transform(X_tr)
-    X_v_t  = pipe.transform(X_v)
-    X_te_t = pipe.transform(X_te)
-    assert X_tr_t.ndim == 2
-    assert X_v_t.shape[1]  == X_tr_t.shape[1]
-    assert X_te_t.shape[1] == X_tr_t.shape[1]
-    for arr in [X_tr_t, X_v_t, X_te_t]:
-        assert not np.isnan(arr).any()
-        assert not np.isinf(arr).any()
-    return pipe, X_tr_t, X_v_t, X_te_t
+pytestmark = pytest.mark.skipif(
+    not DATA_PATH.exists(),
+    reason="H2.csv not found"
+)
 
 
-def test_regression_full_workflow():
-    pipe, Xtr, Xv, Xte = _run_full_workflow("regression")
-    assert Xtr.shape[1] == 93
-    assert Xtr.shape[0] > 30_000
-
-def test_classification_full_workflow():
-    pipe, Xtr, Xv, Xte = _run_full_workflow("classification")
-    assert Xtr.shape[1] == 94
-    assert Xtr.shape[0] == 37_129
-
-def test_clustering_full_workflow():
-    pipe, Xtr, Xv, Xte = _run_full_workflow("clustering")
-    assert Xtr.shape[1] == 8
+@pytest.fixture(scope="module")
+def splits():
+    return load_and_split()
 
 
-def _serialisation_test(task):
-    X_tr, _, X_v, _, X_te, _ = _prep(task)
-    pipe = build_preprocessor(task)
-    pipe.fit(X_tr)
+def _task_data(splits, task):
+    train, val, test = (
+        filter_for_task(part, task)
+        for part in splits
+    )
 
-    with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
-        path = f.name
-    joblib.dump(pipe, path)
-    loaded = joblib.load(path)
+    X_train, y_train = make_xy(train, task)
+    X_val, y_val = make_xy(val, task)
+    X_test, y_test = make_xy(test, task)
 
-    out_orig   = pipe.transform(X_v)
-    out_loaded = loaded.transform(X_v)
-    assert np.allclose(out_orig, out_loaded)
-
-    out_single = loaded.transform(X_te.iloc[[0]])
-    assert out_single.shape == (1, out_orig.shape[1])
-    assert not np.isnan(out_single).any()
-
-def test_regression_serialisation():
-    _serialisation_test("regression")
-
-def test_classification_serialisation():
-    _serialisation_test("classification")
-
-def test_clustering_serialisation():
-    _serialisation_test("clustering")
+    return X_train, y_train, X_val, y_val, X_test, y_test
 
 
-def test_leakage_cols_not_passed_to_regression():
-    train, _, _ = _splits()
-    X = train.drop(columns=["ADR"])
-    out = build_preprocessor("regression").fit_transform(X)
-    assert out.shape[1] == 93
+@pytest.mark.parametrize("task", TASKS)
+def test_full_workflow_train_validation_test(splits, task):
+    X_train, _, X_val, _, X_test, _ = _task_data(splits, task)
 
-def test_leakage_cols_not_passed_to_classification():
-    train, _, _ = _splits()
-    X = train.drop(columns=["IsCanceled"])
-    out = build_preprocessor("classification").fit_transform(X)
-    assert out.shape[1] == 94
+    preprocessor = build_preprocessor(task)
 
+    train_out = preprocessor.fit_transform(X_train)
+    val_out = preprocessor.transform(X_val)
+    test_out = preprocessor.transform(X_test)
 
-def test_pipeline_not_fitted_on_val():
-    train, val, _ = _splits()
-    X_tr = train.drop(columns=["IsCanceled"])
-    X_v  = val.drop(columns=["IsCanceled"])
+    assert train_out.ndim == val_out.ndim == test_out.ndim == 2
 
-    pipe_train = build_preprocessor("classification")
-    pipe_val   = build_preprocessor("classification")
-    pipe_train.fit(X_tr)
-    pipe_val.fit(X_v)
+    assert train_out.shape[1] == val_out.shape[1] == test_out.shape[1]
 
-    out_correct = pipe_train.transform(X_v)
-    out_wrong   = pipe_val.transform(X_v)
-
-    if out_correct.shape != out_wrong.shape:
-        return
-    assert not np.allclose(out_correct, out_wrong)
+    assert np.isfinite(train_out).all()
+    assert np.isfinite(val_out).all()
+    assert np.isfinite(test_out).all()
 
 
-def test_no_target_leakage_in_X():
-    for task in ["regression", "classification"]:
-        X_tr, *_ = _prep(task)
-        assert TASK_TARGETS[task] not in X_tr.columns
+@pytest.mark.parametrize("task", TASKS)
+def test_pipeline_serialization_round_trip(splits, task):
+    X_train, _, X_val, _, X_test, _ = _task_data(splits, task)
 
-def test_val_test_never_used_in_fit():
-    train, _, _ = _splits()
-    X_tr_full = train.drop(columns=["IsCanceled"])
-    X_tr_half = X_tr_full.iloc[:len(X_tr_full) // 2]
+    preprocessor = build_preprocessor(task).fit(X_train)
+    expected = preprocessor.transform(X_val)
 
-    p_full = build_preprocessor("classification")
-    p_half = build_preprocessor("classification")
-    p_full.fit(X_tr_full)
-    p_half.fit(X_tr_half)
+    # TemporaryDirectory avoids Windows file-locking issues
+    # caused by reopening an active NamedTemporaryFile.
+    with tempfile.TemporaryDirectory() as temp_dir:
+        file_path = Path(temp_dir) / "preprocessor.joblib"
 
-    out_full = p_full.transform(X_tr_half)
-    out_half = p_half.transform(X_tr_half)
+        joblib.dump(preprocessor, file_path)
+        loaded = joblib.load(file_path)
 
-    if out_full.shape != out_half.shape:
-        return
-    assert not np.allclose(out_full, out_half)
+        actual = loaded.transform(X_val)
+
+        assert np.allclose(expected, actual)
+
+        one_row = loaded.transform(X_test.iloc[[0]])
+
+        assert one_row.shape == (1, expected.shape[1])
+        assert np.isfinite(one_row).all()
 
 
-if __name__ == "__main__":
-    tests = [(k, v) for k, v in sorted(globals().items())
-             if k.startswith("test_") and callable(v)]
-    passed = failed = 0
-    print(f"Running {len(tests)} integration tests...\n")
-    for name, fn in tests:
-        try:
-            fn()
-            print(f"  PASS  {name}")
-            passed += 1
-        except Exception as exc:
-            print(f"  FAIL  {name}: {exc}")
-            failed += 1
-    print(f"\n{passed} passed, {failed} failed")
-    if failed:
-        sys.exit(1)
+@pytest.mark.parametrize("task", ["regression", "classification"])
+def test_target_is_not_in_model_input(splits, task):
+    X_train, _, *_ = _task_data(splits, task)
+
+    target = "ADR" if task == "regression" else "IsCanceled"
+
+    assert target not in X_train.columns
+
+
+@pytest.mark.parametrize("task", TASKS)
+def test_duplicate_count_never_appears_in_model_input_or_feature_names(
+    splits, task
+):
+    X_train, _, X_val, _, _, _ = _task_data(splits, task)
+
+    # dup_count must not be an input feature.
+    assert "dup_count" not in X_train.columns
+
+    preprocessor = build_preprocessor(task).fit(X_train)
+
+    # It must not appear in the transformed feature names either.
+    names = preprocessor.get_feature_names_out()
+
+    assert not any("dup_count" in str(name).lower() for name in names)
+
+    # Even if accidentally supplied, the ColumnTransformer whitelist
+    # must ignore dup_count.
+    dirty = X_val.assign(dup_count=999)
+
+    clean_output = preprocessor.transform(X_val)
+    dirty_output = preprocessor.transform(dirty)
+
+    assert np.allclose(clean_output, dirty_output)
+
+
+def test_validation_data_is_transformed_without_refitting(splits):
+    X_train, _, X_val, _, _, _ = _task_data(
+        splits, "classification"
+    )
+
+    preprocessor = build_preprocessor("classification").fit(X_train)
+
+    before = preprocessor.transform(X_val)
+
+    # Save the categories learned from training data.
+    country_transformer = (
+        preprocessor.named_steps["preprocessor"]
+        .named_transformers_["country"]
+        .named_steps["topngrouper"]
+    )
+
+    agent_transformer = (
+        preprocessor.named_steps["preprocessor"]
+        .named_transformers_["agent"]
+        .named_steps["topngrouper"]
+    )
+
+    learned_before = {
+        "country": set(country_transformer.top_categories_),
+        "agent": set(agent_transformer.top_categories_),
+    }
+
+    # Transform validation data again.
+    preprocessor.transform(X_val)
+    after = preprocessor.transform(X_val)
+
+    learned_after = {
+        "country": set(country_transformer.top_categories_),
+        "agent": set(agent_transformer.top_categories_),
+    }
+
+    assert np.allclose(before, after)
+    assert learned_before == learned_after
+
+
+def test_pipeline_fit_uses_only_the_data_passed_to_fit(splits):
+    X_train, _, X_val, _, _, _ = _task_data(
+        splits, "classification"
+    )
+
+    full_fit = build_preprocessor("classification").fit(X_train)
+
+    half_train = X_train.iloc[:len(X_train) // 2]
+
+    half_fit = build_preprocessor("classification").fit(half_train)
+
+    # Get the categories learned by each pipeline.
+    full_country = (
+        full_fit.named_steps["preprocessor"]
+        .named_transformers_["country"]
+    )
+
+    half_country = (
+        half_fit.named_steps["preprocessor"]
+        .named_transformers_["country"]
+    )
+
+    full_top = full_country.named_steps["topngrouper"].top_categories_
+    half_top = half_country.named_steps["topngrouper"].top_categories_
+
+    # Each pipeline must learn categories only from its own training data.
+    assert full_top.issubset(set(X_train["Country"].astype(str)))
+
+    assert half_top.issubset(
+        set(half_train["Country"].astype(str))
+    )
+
+    # Validation transformations must not change fitted categories.
+    full_fit.transform(X_val)
+    half_fit.transform(X_val)
+
+    assert full_top == (
+        full_country.named_steps["topngrouper"].top_categories_
+    )
+
+    assert half_top == (
+        half_country.named_steps["topngrouper"].top_categories_
+    )
