@@ -5,6 +5,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.pipeline import Pipeline
+from sklearn.impute import SimpleImputer
 
 
 df = pd.read_csv("data/raw/H2.csv")
@@ -14,6 +15,10 @@ numerical_features = [
     "StaysInWeekendNights",
     "StaysInWeekNights",
     "Adults",
+    "Children",
+    "Babies",
+    "ArrivalDateYear",
+    "IsRepeatedGuest",
 ]
 
 categorical_features = [
@@ -21,6 +26,8 @@ categorical_features = [
     "ReservedRoomType",
     "Meal",
     "MarketSegment",
+    "CustomerType",
+    "DistributionChannel",
 ]
 
 all_features = numerical_features + categorical_features
@@ -47,16 +54,27 @@ cross_validation = KFold(
     random_state=42
 )
 
+# "neg" is required because scikit-learn assumes that higher scores are better
+# So, use negative for errors, positive for R^2 (coefficient of determination).
 scoring = {
     "MAE": "neg_mean_absolute_error",
     "RMSE": "neg_root_mean_squared_error",
     "R2": "r2",
 }
 
-# Scale numerical features and one-hot encode categorical features
+numerical_preprocessor = Pipeline([
+    ("imputer", SimpleImputer(strategy="median")), # For "NaN" values
+    ("scaler", StandardScaler()),
+])
+
+categorical_preprocessor = Pipeline([
+    ("imputer", SimpleImputer(strategy="most_frequent")),
+    ("encoder", OneHotEncoder(handle_unknown="ignore")),
+])
+
 preprocessor = ColumnTransformer([
-    ("numerical", StandardScaler(), numerical_features),
-    ("categorical", OneHotEncoder(handle_unknown="ignore"), categorical_features),
+    ("numerical", numerical_preprocessor, numerical_features),
+    ("categorical", categorical_preprocessor, categorical_features),
 ])
 
 # Combine preprocessing and regression into one pipeline
@@ -73,15 +91,27 @@ scores = cross_validate(
     cv=cross_validation,
     scoring=scoring
 )
+print("Linear Regression (14 features)")
 
-print("Extended Linear Regression (8 features)")
-print(f"CV MAE:  {-scores['test_MAE'].mean():.2f}")
-print(f"CV RMSE: {-scores['test_RMSE'].mean():.2f}")
-print(f"CV R²:   {scores['test_R2'].mean():.4f}")
+for i in range(cross_validation.n_splits):
+    print(
+        f"Fold {i + 1}: "
+        f"MAE={-scores['test_MAE'][i]:.2f}, "
+        f"RMSE={-scores['test_RMSE'][i]:.2f}, "
+        f"R^2={scores['test_R2'][i]:.4f}"
+    )
+
+print("\nADR distribution across validation folds:")
+
+# Fold 5 appears to have an outlier vlaue, which is affecting overall RMSE and R^2 for fold 5
+for fold_number, (_, validation_indices) in enumerate(cross_validation.split(X_train), start=1):
+    fold_adr = y_train.iloc[validation_indices]
+
+    print(
+        f"Fold {fold_number}: "
+        f"Max ADR={fold_adr.max():.2f}, "
+        f"ADR > 1000: {(fold_adr > 1000).sum()}"
+    )
 
 # Train on all development observations
 model.fit(X_train, y_train)
-
-print(f"\nTraining observations: {len(X_train)}")
-print(f"Reserved test observations: {len(X_test)}")
-print(f"Encoded feature count: {len(model.named_steps['preprocessing'].get_feature_names_out())}")
