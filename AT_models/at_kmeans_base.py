@@ -1,5 +1,9 @@
 
 import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+
+from sklearn.decomposition import PCA
 
 from sklearn.model_selection import train_test_split
 from sklearn.cluster import KMeans
@@ -7,6 +11,8 @@ from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import silhouette_score, davies_bouldin_score
+
+
 # import sys # Used with sweep script.
 
 # k = 6 produces a slightly better silhouette score, but the smallest group is very tiny.
@@ -109,3 +115,50 @@ print(
         normalize="index",
     ).mul(100).round(1)
 )
+
+
+
+# PCA
+pca = PCA(n_components=2)
+X_2d = pca.fit_transform(X_processed)
+
+print("\nPCA explained variance:")
+print(pca.explained_variance_ratio_)
+print(f"Total: {pca.explained_variance_ratio_.sum():.2%}")
+
+# Sample points to avoid plotting all 55,531 bookings
+rng = np.random.default_rng(42)
+indices = rng.choice(len(X_2d), size=5000, replace=False)
+
+plt.figure(figsize=(10, 7))
+
+scatter = plt.scatter(
+    X_2d[indices, 0],
+    X_2d[indices, 1],
+    c=clusters[indices],
+    cmap="tab10",
+    s=8,
+    alpha=0.4,
+)
+
+# Project the K-Means centroids into the same PCA space
+centroids_2d = pca.transform(model.cluster_centers_)
+
+plt.scatter(
+    centroids_2d[:, 0],
+    centroids_2d[:, 1],
+    color="black",
+    marker="x",
+    s=150,
+    linewidths=3,
+    label="Centroids",
+)
+
+plt.xlabel(f"PC1 ({pca.explained_variance_ratio_[0]:.1%} variance)")
+plt.ylabel(f"PC2 ({pca.explained_variance_ratio_[1]:.1%} variance)")
+plt.title(f"K-Means Clusters (k={k}) — PCA Projection")
+plt.colorbar(scatter, ticks=range(k), label="Cluster")
+plt.legend()
+plt.tight_layout()
+plt.savefig("kmeans_pca.png", dpi=200, bbox_inches="tight")
+plt.show()
