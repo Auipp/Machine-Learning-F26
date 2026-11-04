@@ -78,3 +78,34 @@ results["Cluster"] = clusters
 
 print("\nAverage feature values per cluster:")
 print(results.groupby("Cluster")[features].mean().round(2))
+
+
+# Booking segment profiling
+profile = df.loc[
+    X_development.index,
+    ["ADR", "IsCanceled", "MarketSegment"]
+].copy()
+
+profile["Cluster"] = clusters
+profile["MarketSegment"] = profile["MarketSegment"].str.strip()
+
+print("\nBusiness profile by cluster:")
+
+print(
+    profile.groupby("Cluster").agg(
+        Bookings=("ADR", "size"),
+        MeanADR=("ADR", "mean"),
+        MedianADR=("ADR", "median"),
+        CancellationRate=("IsCanceled", "mean"),
+    ).round(3)
+)
+
+print("\nMarket segment distribution (% within each cluster):")
+
+print(
+    pd.crosstab(
+        profile["Cluster"],
+        profile["MarketSegment"],
+        normalize="index",
+    ).mul(100).round(1)
+)
