@@ -1,121 +1,113 @@
-import os
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from joblib import dump, load
+"""Linear regression using the shared preprocessing pipeline."""
+
+import sys
 from pathlib import Path
 
-from sklearn.model_selection import cross_val_score
+import numpy as np
+from joblib import dump
 from sklearn.linear_model import SGDRegressor
-from sklearn.metrics import (
-    mean_absolute_error, mean_squared_error, r2_score
-)
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import cross_val_score
 
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from src.model_data import (  # noqa: E402
+    build_model_pipeline,
+    fit_model,
+    load_model,
+    prediction_features,
+    prepare_splits,
+)
 
 # Directory paths for data and artifacts
 current_dir = Path(__file__).resolve().parent
 data_dir = current_dir.resolve().parents[1] / "data"
 artifact_dir = current_dir.resolve().parents[1] / "artifacts"
 
-# Function to train a Linear Regression model with the Scikit-learn default parameters
-def train_base_Linear_Regression(name, train_set, test_set):
-    # File Names
-    train_filename = f"{train_set}.csv"
-    test_filename = f"{test_set}.csv"
-    model_filename =  f"{name}_lr.joblib"
 
-    # Load Training and Test Datasets
-    train_set = pd.read_csv(data_dir / train_filename)
-    test_set = pd.read_csv(data_dir / test_filename)
+# Train a Linear Regression model with the Scikit-learn default parameters
+def train_base_Linear_Regression(name, duplicate_weight=0.0):
+    return _train_linear_regression(name, SGDRegressor(), duplicate_weight)
 
-    # Remove Target Column from Training Set and Store it in another dataset
-    x_train = train_set.drop(columns=["ADR"])
-    y_train = train_set["ADR"]
 
-    # Remove Target Column from Test Set and Store it in another dataset
-    X_test = test_set.drop(columns=["ADR"])
-    y_test = test_set["ADR"]
+# Train a Linear Regression model with custom parameters
+def train_parameterized_Linear_Regression(
+    name,
+    loss="squared_error",
+    penalty="l2",
+    learning_rate="constant",
+    eta0=0.01,
+    alpha=0.0001,
+    max_iter=1000,
+    tol=1e-3,
+    duplicate_weight=0.0,
+):
+    linear_regress = SGDRegressor(
+        loss=loss,
+        penalty=penalty,
+        learning_rate=learning_rate,
+        eta0=eta0,
+        alpha=alpha,
+        max_iter=max_iter,
+        tol=tol,
+    )
+    return _train_linear_regression(
+        name, linear_regress, duplicate_weight
+    )
 
-    # Initialize the Linear Regression model without parameters
-    linear_regress = SGDRegressor()
 
-    # Train
-    linear_regress.fit(x_train, y_train)
-    
-    # Get Trained Model Predictions on the Test Set
-    y_pred = linear_regress.predict(X_test)
+def _train_linear_regression(name, linear_regress, duplicate_weight):
+    # Rows with an invalid ADR are removed for regression by the loader helpers;
+    # the preprocessor is then fitted on the training split only.
+    train, _, test = prepare_splits("regression", duplicate_weight)
+    X_train, y_train, w_train = train
+    X_test, y_test, _ = test
 
-    # Calculate regression metrics and display them
-    show_test_results(linear_regress, y_test, y_pred, x_train, y_train, 5)
+    pipeline = build_model_pipeline("regression", linear_regress)
+    fit_model(
+        pipeline,
+        X_train,
+        y_train,
+        w_train if duplicate_weight else None,
+    )
 
-    # Save trained model as an artifact
-    dump(linear_regress, artifact_dir / model_filename)
-
-# Function to train a Linear Regression model with the Scikit-learn custom parameters
-def train_parameterized_Linear_Regression(name, train_set, test_set, loss='squared_error', penalty='l2', learning_rate="constant", eta0=0.01, alpha=0.0001, max_iter=1000, tol=1e-3):
-    # File Names
-    train_filename = f"{train_set}.csv"
-    test_filename = f"{test_set}.csv"
-    model_filename =  f"{name}_lr.joblib"
-
-    # Load Training and Test Datasets
-    train_set = pd.read_csv(data_dir / train_filename)
-    test_set = pd.read_csv(data_dir / test_filename)
-
-    # Remove Target Column from Training Set and Store it in another dataset
-    x_train = train_set.drop(columns=["ADR"])
-    y_train = train_set["ADR"]
-
-    # Remove Target Column from Test Set and Store it in another dataset
-    x_test = test_set.drop(columns=["ADR"])
-    y_test = test_set["ADR"]
-
-    # Initialize the Linear Regression model with parameters
-    linear_regress = SGDRegressor(loss=loss, penalty=penalty, learning_rate=learning_rate, eta0=eta0, alpha=alpha, max_iter=max_iter, tol=tol)
-
-    # Train
-    linear_regress.fit(x_train, y_train)
-    
-    # Get Trained Model Predictions on the Test Set
-    y_pred = linear_regress.predict(x_test)
+    # Get trained model predictions on the test set
+    y_pred = pipeline.predict(X_test)
 
     # Calculate regression metrics and display them
-    show_test_results(linear_regress, y_test, y_pred, x_train, y_train, 5)
+    show_test_results(pipeline, y_test, y_pred, X_train, y_train, 5)
 
-    # Save trained model as an artifact
-    dump(linear_regress, artifact_dir / model_filename)
+    # Save the preprocessing pipeline together with the trained model
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    dump(pipeline, artifact_dir / f"{name}_lr.joblib")
+    return pipeline
 
 
-# Function to load an artifact and make predictions on a new dataset
-def predict_with_Linear_Regression(name, pred_set):
-    # File Names
-    pred_filename = f"{pred_set}.csv"
-    model_filename =  f"{name}_lr.joblib"
+# Load an artifact and make predictions on a new dataset
+def predict_with_Linear_Regression(name, pred_set="test"):
+    """Predict on a project split ("train"/"val"/"test") or a raw CSV path."""
+    pipeline = load_model(artifact_dir / f"{name}_lr.joblib")
+    features = prediction_features(pred_set, "regression", data_dir)
 
-    # Load the prediction dataset and the trained model
-    pred_set = pd.read_csv(data_dir / pred_filename)
-    linear_regress = load(artifact_dir / model_filename)
-
-    # Make predictions using the loaded model
-    y_pred = linear_regress.predict(pred_set)
-
-    # Print results
+    y_pred = pipeline.predict(features)
     print(y_pred)
+    return y_pred
 
 
-# Function to display the results of the model on the test set
-def show_test_results(linear_regress, y_test, y_pred, X_train, y_train, cv):
-
-    # Mean Absolute Error: The average of the differences between predicted and actual values in absolute terms
+# Display the results of the model on the test set
+def show_test_results(pipeline, y_test, y_pred, X_train, y_train, cv):
+    # Mean Absolute Error: average absolute difference between predictions and actual values
     mae = mean_absolute_error(y_test, y_pred)
 
-    # Mean Squared Error: The average of the differences between predicted and actual values squared 
+    # Mean Squared Error: average squared difference between predictions and actual values
     mse = mean_squared_error(y_test, y_pred)
 
-    # Root Mean Squared Error: The square root of the MSE
-    rmse = np.sqrt(mse)  
+    # Root Mean Squared Error: the square root of the MSE
+    rmse = np.sqrt(mse)
 
-    # Coefficient of Determination (R²):  is the proportion of the variation in the dependent variable that is predictable from the independent variables
+    # Coefficient of Determination (R²): proportion of target variation explained by the model
     r2 = r2_score(y_test, y_pred)
 
     # Print results
@@ -125,9 +117,11 @@ def show_test_results(linear_regress, y_test, y_pred, X_train, y_train, cv):
     print(f"RMSE: {rmse:.4f}")
     print(f"R²:   {r2:.4f}\n")
 
-    # K-fold Cross-Validation: The process of partitioning the training data into k subsets, training the model on k-1 of those subsets, 
-    # and validating it on the remaining subset. This is done repeatadly a K number of times.
-    cv_scores = cross_val_score(linear_regress, X_train, y_train, cv=cv, scoring="r2")
+    # K-fold Cross-Validation: the preprocessor is refitted on every training
+    # fold, so the validation fold never influences feature scaling/encoding.
+    cv_scores = cross_val_score(
+        pipeline, X_train, y_train, cv=cv, scoring="r2"
+    )
 
     # Print cross-validation results
     print(f"Cross-Validation Results ({cv}-Fold)")
@@ -136,9 +130,6 @@ def show_test_results(linear_regress, y_test, y_pred, X_train, y_train, cv):
         f"Mean CV Accuracy: {cv_scores.mean():.4f} (+/- {cv_scores.std():.4f})\n"
     )
 
-        
 
-
-
-
-
+if __name__ == "__main__":
+    train_base_Linear_Regression("A")
