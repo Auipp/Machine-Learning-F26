@@ -28,6 +28,17 @@ Run a model directly, for example:
 python src/Regression/linear_regression.py
 ```
 
+The milestone-1 experiments in `AT_models/` use the same loader and preprocessing pipeline. The `extended` experiments additionally opt into the extra judgment columns:
+
+```bash
+python AT_models/at_baseline_regression.py
+python AT_models/at_extended_regression.py
+python AT_models/at_logistic_regression_base.py
+python AT_models/at_logistic_regression_extended.py
+python AT_models/at_kmeans_base.py 5
+bash AT_models/sweep.sh
+```
+
 Or from Python:
 
 ```python

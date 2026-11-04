@@ -59,11 +59,20 @@ def prepare_splits(task, duplicate_weight=0.0, splits=None):
     return tuple(prepared)
 
 
-def build_model_pipeline(task, estimator):
-    """Attach the task's preprocessing pipeline to a model."""
+def build_model_pipeline(task, estimator, include_judgment=()):
+    """Attach the task's preprocessing pipeline to a model.
+
+    ``include_judgment`` forwards to ``build_preprocessor`` so experiments can
+    opt into the extra columns (for example ADR for classification).
+    """
     return Pipeline(
         [
-            ("preprocessor", build_preprocessor(task)),
+            (
+                "preprocessor",
+                build_preprocessor(
+                    task, include_judgment=include_judgment
+                ),
+            ),
             ("model", estimator),
         ]
     )
