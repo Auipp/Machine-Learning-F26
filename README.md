@@ -50,3 +50,37 @@ from src.Regression.linear_regression import (
 train_base_Linear_Regression("A")
 predict_with_Linear_Regression("A", "test")
 ```
+
+## How much data is used for training?
+
+The models read the whole `data/raw/H2.csv` file, but they do **not** train on all of it:
+
+| Stage | Rows |
+| --- | ---: |
+| Raw `H2.csv` | 79,330 |
+| After collapsing exact duplicates and removing zero-guest / zero-night bookings | 53,043 |
+| Training split (70%) | 37,129 |
+| Validation split (15%) | 7,957 |
+| Test split (15%) | 7,957 |
+
+Regression and clustering additionally remove ADR values outside `[1, 510]`, which leaves `36,616 / 7,862 / 7,841` train/validation/test rows. Classification keeps all 53,043 cleaned rows.
+
+Models are fitted on the training split only; validation and test rows are held out. Cross-validation also fits on folds of the training split only. Duplicate rows are collapsed by default (`duplicate_weight=0`), so each unique booking counts once; pass `duplicate_weight=100` to give every duplicate copy its original weight.
+
+## Comparing models
+
+Run the shared comparison harness:
+
+```bash
+python compare_models.py
+# faster, without KNN:
+python compare_models.py --skip-knn
+```
+
+It evaluates every model on the same splits and writes:
+
+- `outputs/model_comparison.csv`
+- `outputs/model_comparison.md`
+- `outputs/model_comparison.png`
+
+The comparison covers classification (dummy, logistic regression base/extended, KNN), regression (dummy, linear regression base/extended, SGD), and clustering (KMeans for `k=2..8`).
