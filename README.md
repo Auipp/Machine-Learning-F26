@@ -1,4 +1,8 @@
 # Machine-Learning-F26
+
+- **Repository URL:** https://github.com/Auipp/Machine-Learning-F26
+- **Milestone 1 Commit SHA:** `5f3560d`
+
 _____
 
 ## Team Members
@@ -12,6 +16,18 @@ _____
 | Ahmed Tamer Mohamed          | 24P0179 | 24P0179             |
 | Eyad Wael Swelam             | 24P0137 | EyadUser            |
 
+## CLI Usage
+
+```bash
+python main.py compare
+python main.py compare --skip-knn
+python main.py test --fast
+python main.py train --task regression
+python main.py train --task classification
+python main.py train --task clustering
+python main.py predict --task regression
+```
+
 ## Models and preprocessing
 
 The models use the shared pipeline in `src/preprocessing/`:
@@ -20,7 +36,7 @@ The models use the shared pipeline in `src/preprocessing/`:
 - `src/preprocessing/pipeline.py` applies the task-specific filters, feature engineering, encoding, and scaling.
 - `src/model_data.py` connects the models to that pipeline.
 
-Each saved model in `artifacts/` contains both the fitted preprocessor and the estimator, so prediction data is transformed exactly like the training data. The old CSVs in `data/*.csv` were produced by the previous preprocessing and are no longer used by the models. Artifacts saved before this change must be retrained.
+Each saved model in `artifacts/` contains both the fitted preprocessor and the estimator, so prediction data is transformed exactly like the training data.
 
 Run a model directly, for example:
 
@@ -73,7 +89,6 @@ Run the shared comparison harness:
 
 ```bash
 python compare_models.py
-# faster, without KNN:
 python compare_models.py --skip-knn
 ```
 
