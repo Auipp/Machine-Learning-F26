@@ -1,0 +1,122 @@
+task,model,split,metric,value
+classification,Dummy (majority),validation,accuracy,0.6978760839512379
+classification,Dummy (majority),validation,precision,0.0
+classification,Dummy (majority),validation,recall,0.0
+classification,Dummy (majority),validation,f1,0.0
+classification,Dummy (majority),validation,roc_auc,0.5
+classification,Dummy (majority),validation,pr_auc,0.3021239160487621
+classification,Dummy (majority),test,accuracy,0.6980017594570818
+classification,Dummy (majority),test,precision,0.0
+classification,Dummy (majority),test,recall,0.0
+classification,Dummy (majority),test,f1,0.0
+classification,Dummy (majority),test,roc_auc,0.5
+classification,Dummy (majority),test,pr_auc,0.3019982405429182
+classification,Logistic Regression (base),validation,accuracy,0.7255246952368983
+classification,Logistic Regression (base),validation,precision,0.5773558368495078
+classification,Logistic Regression (base),validation,recall,0.3415141430948419
+classification,Logistic Regression (base),validation,f1,0.4291688447464715
+classification,Logistic Regression (base),validation,roc_auc,0.7809769823569758
+classification,Logistic Regression (base),validation,pr_auc,0.5581968370486871
+classification,Logistic Regression (base),test,accuracy,0.7218801055674249
+classification,Logistic Regression (base),test,precision,0.5664335664335665
+classification,Logistic Regression (base),test,recall,0.33707865168539325
+classification,Logistic Regression (base),test,f1,0.4226454474302113
+classification,Logistic Regression (base),test,roc_auc,0.777702887894753
+classification,Logistic Regression (base),test,pr_auc,0.5543161244865971
+classification,Logistic Regression (extended),validation,accuracy,0.7706422018348624
+classification,Logistic Regression (extended),validation,precision,0.6666666666666666
+classification,Logistic Regression (extended),validation,recall,0.48169717138103163
+classification,Logistic Regression (extended),validation,f1,0.5592851968123642
+classification,Logistic Regression (extended),validation,roc_auc,0.8183161175937937
+classification,Logistic Regression (extended),validation,pr_auc,0.647500604806106
+classification,Logistic Regression (extended),test,accuracy,0.7691340957647355
+classification,Logistic Regression (extended),test,precision,0.6637731481481481
+classification,Logistic Regression (extended),test,recall,0.4773200166458593
+classification,Logistic Regression (extended),test,f1,0.5553134834180585
+classification,Logistic Regression (extended),test,roc_auc,0.8191337394695234
+classification,Logistic Regression (extended),test,pr_auc,0.6573157923729469
+classification,KNN (k=5),validation,accuracy,0.7324368480583134
+classification,KNN (k=5),validation,precision,0.5655073844687947
+classification,KNN (k=5),validation,recall,0.4937603993344426
+classification,KNN (k=5),validation,f1,0.527204086164779
+classification,KNN (k=5),validation,roc_auc,0.7602226599943128
+classification,KNN (k=5),validation,pr_auc,0.5380225108906116
+classification,KNN (k=5),test,accuracy,0.7280382053537765
+classification,KNN (k=5),test,precision,0.5570405727923627
+classification,KNN (k=5),test,recall,0.48564294631710364
+classification,KNN (k=5),test,f1,0.5188972876834148
+classification,KNN (k=5),test,roc_auc,0.749828303985041
+classification,KNN (k=5),test,pr_auc,0.5293929229884757
+regression,Dummy (mean),validation,mae,30.228349005529456
+regression,Dummy (mean),validation,rmse,39.150189702675995
+regression,Dummy (mean),validation,r2,-3.4249570850519717e-06
+regression,Dummy (mean),test,mae,30.44528384559746
+regression,Dummy (mean),test,rmse,38.93861730244461
+regression,Dummy (mean),test,r2,-0.00067339635094954
+regression,Linear Regression (base),validation,mae,17.456099182193817
+regression,Linear Regression (base),validation,rmse,23.5550881966119
+regression,Linear Regression (base),validation,r2,0.6380044637776068
+regression,Linear Regression (base),test,mae,17.9028848125279
+regression,Linear Regression (base),test,rmse,23.853104567219976
+regression,Linear Regression (base),test,r2,0.6244903290651682
+regression,Linear Regression (extended),validation,mae,17.4543325053799
+regression,Linear Regression (extended),validation,rmse,23.552527600602367
+regression,Linear Regression (extended),validation,r2,0.6380831621833474
+regression,Linear Regression (extended),test,mae,17.89954746122005
+regression,Linear Regression (extended),test,rmse,23.849788545059194
+regression,Linear Regression (extended),test,r2,0.6245947273697252
+regression,SGD Regressor,validation,mae,17.480890163990505
+regression,SGD Regressor,validation,rmse,23.62487328612326
+regression,SGD Regressor,validation,r2,0.6358563663859207
+regression,SGD Regressor,test,mae,17.912048105160117
+regression,SGD Regressor,test,rmse,23.890385526973528
+regression,SGD Regressor,test,r2,0.6233156139695362
+clustering,KMeans (k=2),training,inertia,99942.10885304931
+clustering,KMeans (k=2),validation,silhouette,0.19969624405285852
+clustering,KMeans (k=2),validation,davies_bouldin,2.060387691945133
+clustering,KMeans (k=2),validation,min_cluster_size,2942.0
+clustering,KMeans (k=2),test,silhouette,0.2065481896839561
+clustering,KMeans (k=2),test,davies_bouldin,2.0299814462440273
+clustering,KMeans (k=2),test,min_cluster_size,2863.0
+clustering,KMeans (k=3),training,inertia,85966.96556116236
+clustering,KMeans (k=3),validation,silhouette,0.18580380294426657
+clustering,KMeans (k=3),validation,davies_bouldin,1.7292405537300606
+clustering,KMeans (k=3),validation,min_cluster_size,1890.0
+clustering,KMeans (k=3),test,silhouette,0.19566748728520983
+clustering,KMeans (k=3),test,davies_bouldin,1.6815424899546951
+clustering,KMeans (k=3),test,min_cluster_size,1812.0
+clustering,KMeans (k=4),training,inertia,76279.9497265889
+clustering,KMeans (k=4),validation,silhouette,0.19725599936066293
+clustering,KMeans (k=4),validation,davies_bouldin,1.575414268388077
+clustering,KMeans (k=4),validation,min_cluster_size,1201.0
+clustering,KMeans (k=4),test,silhouette,0.2040631860781484
+clustering,KMeans (k=4),test,davies_bouldin,1.5805225904191078
+clustering,KMeans (k=4),test,min_cluster_size,1184.0
+clustering,KMeans (k=5),training,inertia,68958.24731610266
+clustering,KMeans (k=5),validation,silhouette,0.2010541971812989
+clustering,KMeans (k=5),validation,davies_bouldin,1.473661933773692
+clustering,KMeans (k=5),validation,min_cluster_size,919.0
+clustering,KMeans (k=5),test,silhouette,0.2052102390230669
+clustering,KMeans (k=5),test,davies_bouldin,1.470236999136958
+clustering,KMeans (k=5),test,min_cluster_size,885.0
+clustering,KMeans (k=6),training,inertia,64270.879334618214
+clustering,KMeans (k=6),validation,silhouette,0.17606356972085843
+clustering,KMeans (k=6),validation,davies_bouldin,1.5053463412002583
+clustering,KMeans (k=6),validation,min_cluster_size,319.0
+clustering,KMeans (k=6),test,silhouette,0.18456502980095618
+clustering,KMeans (k=6),test,davies_bouldin,1.5082852215840867
+clustering,KMeans (k=6),test,min_cluster_size,318.0
+clustering,KMeans (k=7),training,inertia,60434.5324810527
+clustering,KMeans (k=7),validation,silhouette,0.17361970120803472
+clustering,KMeans (k=7),validation,davies_bouldin,1.4379570296284303
+clustering,KMeans (k=7),validation,min_cluster_size,122.0
+clustering,KMeans (k=7),test,silhouette,0.17536755828324305
+clustering,KMeans (k=7),test,davies_bouldin,1.442173101721551
+clustering,KMeans (k=7),test,min_cluster_size,88.0
+clustering,KMeans (k=8),training,inertia,57192.87266679486
+clustering,KMeans (k=8),validation,silhouette,0.1586924909057354
+clustering,KMeans (k=8),validation,davies_bouldin,1.4787204136125545
+clustering,KMeans (k=8),validation,min_cluster_size,100.0
+clustering,KMeans (k=8),test,silhouette,0.16224535689766564
+clustering,KMeans (k=8),test,davies_bouldin,1.4655752814994218
+clustering,KMeans (k=8),test,min_cluster_size,70.0
